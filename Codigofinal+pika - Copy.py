@@ -81,14 +81,13 @@ if uploaded_file:
                 st.pyplot(fig)
 
         with tab4:
-            st.subheader("Gravimetria especifica por tipo de unidade")
-            st.write("NEM SEI MANO")
+            st.subheader("Projeções e Cenários")
+            st.write("Esta aba está em construção.")
 
         with tab5:
-            st.subheader("Gravimetria especifica por UF")
-            st.write(",")
+            st.subheader("Educação e Boas Práticas")
+            st.write("Esta aba está em construção.")
             
-
         arquivo_fluxo = gerar_arquivo_fluxo(df_filtrado)
         st.download_button(label="Baixar Resumo em XLSX", data=arquivo_fluxo, file_name="resumo_fluxo_residuos.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
