@@ -1,129 +1,96 @@
-import pandas as pd
 import streamlit as st
-import plotly.express as px
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from io import BytesIO
 
-# Função para carregar os dados das tabelas
-@st.cache_data
-def carregar_tabelas(tabela1_path, tabela2_path):
-    gravimetria_data = pd.read_excel(tabela1_path)
-    resumo_fluxo_data = pd.read_excel(tabela2_path)
-    gravimetria_data.columns = gravimetria_data.columns.str.strip()  # Limpando espaços
-    resumo_fluxo_data.columns = resumo_fluxo_data.columns.str.strip()  # Limpando espaços
-    return gravimetria_data, resumo_fluxo_data
+def gerar_arquivo_fluxo(df_filtrado):
+    resumo_detalhado = df_filtrado.groupby(['Tipo de unidade, segundo o município informante', 'UF'])[
+        ['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']
+    ].sum().reset_index()
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        resumo_detalhado.to_excel(writer, index=False, sheet_name="Resumo por Unidade e UF")
+        worksheet = writer.sheets["Resumo por Unidade e UF"]
+        for i, width in enumerate([20] * resumo_detalhado.shape[1]):
+            worksheet.set_column(i, i, width)
+    output.seek(0)
+    return output
 
-# Percentuais para entulhos
-percentuais_entulho = {
-    "Concreto": 0.0677, "Argamassa": 0.1065, "Tijolo": 0.078, "Madeira": 0.0067,
-    "Papel": 0.0023, "Plástico": 0.0034, "Metal": 0.0029, "Material agregado": 0.0484,
-    "Terra bruta": 0.0931, "Pedra": 0.00192, "Caliça Retida": 0.3492,
-    "Caliça Peneirada": 0.2, "Cerâmica": 0.0161, "Material orgânico e galhos": 0.0087,
-    "Outros": 0
-}
+st.set_page_config(page_title="Análise de Resíduos", layout="wide")
+st.title("Análise de Gestão de Resíduos")
 
-# Função para calcular o fluxo ajustado
-def calcular_fluxo_ajustado(gravimetria_data, resumo_fluxo_data):
-    fluxo_ajustado = []  # Lista para armazenar os resultados
-    for index, row in resumo_fluxo_data.iterrows():
-        uf = row["UF"]
-        unidade = row["Tipo de unidade, segundo o município informante"]
-        ajuste_residuos = {"UF": uf, "Unidade": unidade}
-        
-        for residuo in ["Dom+Pub", "Entulho", "Podas", "Saúde", "Outros"]:
-            if residuo in resumo_fluxo_data.columns:
-                gravimetricos = gravimetria_data[gravimetria_data["Tipo de unidade, segundo o município informante"] == unidade]
-                if not gravimetricos.empty:
-                    gravimetricos = gravimetricos.iloc[0]
-                    if residuo == "Dom+Pub":
-                        ajuste_residuos.update({
-                            "Papel/Papelão": row[residuo] * gravimetricos.get("Papel/Papelão", 0),
-                            "Plásticos": row[residuo] * gravimetricos.get("Plásticos", 0),
-                            "Vidros": row[residuo] * gravimetricos.get("Vidros", 0),
-                            "Metais": row[residuo] * gravimetricos.get("Metais", 0),
-                            "Orgânicos": row[residuo] * gravimetricos.get("Orgânicos", 0),
-                        })
-                    elif residuo == "Entulho":
-                        for material, percentual in percentuais_entulho.items():
-                            ajuste_residuos[material] = row[residuo] * percentual
-                    elif residuo == "Saúde":
-                        ajuste_residuos["Valor energético (MJ/ton)"] = row[residuo] * gravimetricos.get("Valor energético p/Incineração", 0)
-                    elif residuo == "Podas":
-                        ajuste_residuos["Redução Peso Seco"] = row[residuo] * gravimetricos.get("Redução de peso seco com Podas", 0)
-                        ajuste_residuos["Redução Peso Líquido"] = row[residuo] * gravimetricos.get("Redução de peso Líquido com Podas", 0)
-                    elif residuo == "Outros":
-                        ajuste_residuos["Outros Processados"] = row[residuo] * gravimetricos.get("Outros", 0)
-        fluxo_ajustado.append(ajuste_residuos)
-    return pd.DataFrame(fluxo_ajustado)
+uploaded_file = st.file_uploader("Carregue sua tabela", type=["xlsx", "csv"])
 
-# Aplicação Streamlit
-st.set_page_config(page_title="Gestão de Resíduos", layout="wide")
-st.title("📊 Gestão de Resíduos Sólidos Urbanos")
-st.sidebar.header("Configurações de Entrada")
+if uploaded_file:
+    df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
+    st.write("Tabela carregada:")
+    st.write(df)
 
-# Upload das planilhas
-tabela1_path = st.sidebar.file_uploader("Carregue a Tabela 1 (Gravimetria por Tipo de Unidade)", type=["xlsx"])
-tabela2_path = st.sidebar.file_uploader("Carregue a Tabela 2 (Resumo por Unidade e UF)", type=["xlsx"])
+    tipos_unidade = st.multiselect("Escolha os Tipos de Unidade", df['Tipo de unidade, segundo o município informante'].unique())
+    ufs = st.multiselect("Escolha os Estados (UF)", df['UF'].unique())
 
-if tabela1_path and tabela2_path:
-    gravimetria_data, resumo_fluxo_data = carregar_tabelas(tabela1_path, tabela2_path)
-    st.success("✅ Tabelas carregadas com sucesso!")
-    fluxo_ajustado = calcular_fluxo_ajustado(gravimetria_data, resumo_fluxo_data)
-    
-    # Métricas Resumidas
-    st.header("Resumo dos Indicadores")
-    total_residuos = fluxo_ajustado.filter(regex="Papel|Plásticos|Vidros|Metais|Orgânicos|Concreto|Argamassa").sum().sum()
-    total_entulho = fluxo_ajustado.filter(regex="Concreto|Argamassa|Tijolo").sum().sum()
-    col1, col2 = st.columns(2)
-    col1.metric("Total de Resíduos Processados (ton)", f"{total_residuos:,.2f}")
-    col2.metric("Total de Entulho Processado (ton)", f"{total_entulho:,.2f}")
+    if tipos_unidade and ufs:
+        df_filtrado = df[
+            (df['Tipo de unidade, segundo o município informante'].isin(tipos_unidade)) & 
+            (df['UF'].isin(ufs))
+        ]
 
-    # Exibição dos resultados detalhados
-    st.header("📈 Resultados Detalhados")
-    st.dataframe(fluxo_ajustado)
+        composicao_total = df_filtrado[['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']].sum()
+        total_residuos = composicao_total.sum()
 
-    # Gráficos para Redução de Peso
-    reducao_peso_cols = ["Redução Peso Seco", "Redução Peso Líquido"]
-    if all(col in fluxo_ajustado.columns for col in reducao_peso_cols):
-        st.subheader("📍 Redução de Peso com Podas e Dom+Pub")
-        reducao_peso = fluxo_ajustado[["UF"] + reducao_peso_cols].groupby("UF").sum().reset_index()
-        fig_peso = px.bar(reducao_peso, x="UF", y=reducao_peso_cols, barmode="stack", title="Redução de Peso por UF")
-        st.plotly_chart(fig_peso, use_container_width=True)
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "Visão Geral Nacional", "Comparação entre UFs", 
+            "Destinação de Resíduos por Unidade", "Projeções e Cenários", "Educação e Boas Práticas"
+        ])
 
-    # Gráficos para Valor Energético
-    energetico_cols = ["Valor energético (MJ/ton)"]
-    if energetico_cols[0] in fluxo_ajustado.columns:
-        st.subheader("📍 Valor Energético (Incineração e Coprocessamento)")
-        energetico = fluxo_ajustado[["UF"] + energetico_cols].groupby("UF").sum().reset_index()
-        fig_energetico = px.bar(energetico, x="UF", y=energetico_cols, barmode="stack", title="Valor Energético por UF")
-        st.plotly_chart(fig_energetico, use_container_width=True)
+        with tab1:
+            st.subheader("Indicadores-Chave")
+            st.metric("Total de Resíduos (ton)", f"{total_residuos:,.2f}")
+            st.metric("Tipo de Resíduo Predominante", composicao_total.idxmax())
+            
+            st.subheader("Distribuição de Resíduos por UF")
+            resumo_por_uf = df_filtrado.groupby(['UF'])[['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']].sum()
+            fig, ax = plt.subplots(figsize=(10, 6))
+            sns.heatmap(resumo_por_uf, annot=True, fmt=".2f", cmap="YlGnBu", linewidths=0.5, ax=ax)
+            ax.set_title("Mapa de Calor da Geração de Resíduos por UF")
+            st.pyplot(fig)
 
-    # Gráficos por categoria
-    categorias = {
-        "Resíduos Urbanos": ["Plásticos", "Vidros", "Metais", "Orgânicos", "Dom+Pub"],
-        "Entulho e Materiais de Construção": ["Concreto", "Argamassa", "Tijolo", "Madeira", "Papel", "Plástico", "Metal",
-                                              "Material agregado", "Terra bruta", "Pedra", "Caliça Retida", "Caliça Peneirada",
-                                              "Cerâmica", "Material orgânico e galhos", "Entulho"]
-    }
+        with tab2:
+            st.subheader("Comparação entre UFs")
+            fig, ax = plt.subplots(figsize=(12, 8))
+            resumo_por_uf.plot(kind='bar', stacked=True, ax=ax, color=['#4CAF50', '#FF9800', '#9C27B0', '#00BCD4', '#FFC107'])
+            ax.set_title("Distribuição de Resíduos por Tipo e UF")
+            ax.set_xlabel("UF")
+            ax.set_ylabel("Massa (toneladas)")
+            ax.legend(title="Tipo de Resíduo")
+            st.pyplot(fig)
 
-    # Gráficos para resíduos urbanos
-    residuos_urbanos_cols = [col for col in categorias["Resíduos Urbanos"] if col in fluxo_ajustado.columns]
-    if residuos_urbanos_cols:
-        st.subheader("📍 Resíduos Urbanos")
-        residuos_urbanos = fluxo_ajustado[["UF"] + residuos_urbanos_cols].groupby("UF").sum().reset_index()
-        fig_urbanos = px.bar(residuos_urbanos, x="UF", y=residuos_urbanos_cols, barmode="stack", title="Resíduos Urbanos por UF")
-        st.plotly_chart(fig_urbanos, use_container_width=True)
+        with tab3:
+            st.subheader("Destinação de Resíduos por Unidade")
+            for unidade in tipos_unidade:
+                unidade_df = df_filtrado[df_filtrado['Tipo de unidade, segundo o município informante'] == unidade]
+                resumo_unidade = unidade_df.groupby('UF')[['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']].sum()
 
-    # Gráficos para entulho
-    entulho_cols = [col for col in categorias["Entulho e Materiais de Construção"] if col in fluxo_ajustado.columns]
-    if entulho_cols:
-        st.subheader("📍 Entulho e Materiais de Construção")
-        entulho = fluxo_ajustado[["UF"] + entulho_cols].groupby("UF").sum().reset_index()
-        fig_entulho = px.bar(entulho, x="UF", y=entulho_cols, barmode="stack", title="Entulho e Materiais de Construção por UF")
-        st.plotly_chart(fig_entulho, use_container_width=True)
+                fig, ax = plt.subplots(figsize=(10, 6))
+                resumo_unidade.plot(kind='bar', stacked=True, ax=ax, color=['#4CAF50', '#FF9800', '#9C27B0', '#00BCD4', '#FFC107'])
+                ax.set_title(f"Destinação de Resíduos por UF para '{unidade}'")
+                ax.set_xlabel("UF")
+                ax.set_ylabel("Massa (toneladas)")
+                ax.legend(title="Tipo de Resíduo")
+                st.pyplot(fig)
 
-    # Gráfico de Valor Energético
-    energetico_cols = ["Valor energético p/Coprocessamento", "Valor energético p/Incineração", "Saúde"]
-    if all(col in fluxo_ajustado.columns for col in energetico_cols):
-        st.subheader("📍 Valor Energético")
-        energetico = fluxo_ajustado[["UF"] + energetico_cols].groupby("UF").sum().reset_index()
-        fig_energetico = px.bar(energetico, x="UF", y=energetico_cols, barmode="stack", title="Valor Energético por UF")
-        st.plotly_chart(fig_energetico, use_container_width=True)
+        with tab4:
+            st.subheader("Gravimetria especifica por tipo de unidade")
+            st.write("NEM SEI MANO")
+
+        with tab5:
+            st.subheader("Gravimetria especifica por UF")
+            st.write(",")
+            
+
+        arquivo_fluxo = gerar_arquivo_fluxo(df_filtrado)
+        st.download_button(label="Baixar Resumo em XLSX", data=arquivo_fluxo, file_name="resumo_fluxo_residuos.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    else:
+        st.warning("Selecione pelo menos um Tipo de Unidade e um Estado (UF).")
+
