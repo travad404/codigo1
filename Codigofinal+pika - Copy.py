@@ -5,11 +5,9 @@ import seaborn as sns
 from io import BytesIO
 
 def gerar_arquivo_fluxo(df_filtrado):
-    """Gera um arquivo Excel com o resumo dos dados filtrados."""
-    resumo_detalhado = df_filtrado.groupby(
-        ['Tipo de unidade, segundo o município informante', 'UF']
-    )[['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']].sum().reset_index()
-
+    resumo_detalhado = df_filtrado.groupby(['Tipo de unidade, segundo o município informante', 'UF'])[
+        ['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']
+    ].sum().reset_index()
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         resumo_detalhado.to_excel(writer, index=False, sheet_name="Resumo por Unidade e UF")
@@ -41,9 +39,9 @@ if uploaded_file:
         composicao_total = df_filtrado[['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']].sum()
         total_residuos = composicao_total.sum()
 
-        tab1, tab2, tab3 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "Visão Geral Nacional", "Comparação entre UFs", 
-            "Destinação de Resíduos por Unidade"
+            "Destinação de Resíduos por Unidade", "Projeções e Cenários", "Educação e Boas Práticas"
         ])
 
         with tab1:
@@ -52,7 +50,7 @@ if uploaded_file:
             st.metric("Tipo de Resíduo Predominante", composicao_total.idxmax())
             
             st.subheader("Distribuição de Resíduos por UF")
-            resumo_por_uf = df_filtrado.groupby('UF')[['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']].sum()
+            resumo_por_uf = df_filtrado.groupby(['UF'])[['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']].sum()
             fig, ax = plt.subplots(figsize=(10, 6))
             sns.heatmap(resumo_por_uf, annot=True, fmt=".2f", cmap="YlGnBu", linewidths=0.5, ax=ax)
             ax.set_title("Mapa de Calor da Geração de Resíduos por UF")
@@ -81,6 +79,15 @@ if uploaded_file:
                 ax.set_ylabel("Massa (toneladas)")
                 ax.legend(title="Tipo de Resíduo")
                 st.pyplot(fig)
+
+        with tab4:
+            st.subheader("Gravimetria especifica por tipo de unidade")
+            st.write("NEM SEI MANO")
+
+        with tab5:
+            st.subheader("Gravimetria especifica por UF")
+            st.write(",")
+            
 
         arquivo_fluxo = gerar_arquivo_fluxo(df_filtrado)
         st.download_button(label="Baixar Resumo em XLSX", data=arquivo_fluxo, file_name="resumo_fluxo_residuos.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
