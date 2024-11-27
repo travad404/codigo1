@@ -39,9 +39,9 @@ if uploaded_file:
         composicao_total = df_filtrado[['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']].sum()
         total_residuos = composicao_total.sum()
 
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        tab1, tab2, tab3 = st.tabs([
             "Visão Geral Nacional", "Comparação entre UFs", 
-            "Destinação de Resíduos por Unidade", "Projeções e Cenários", "Educação e Boas Práticas"
+            "Destinação de Resíduos por Unidade"
         ])
 
         with tab1:
@@ -80,14 +80,6 @@ if uploaded_file:
                 ax.legend(title="Tipo de Resíduo")
                 st.pyplot(fig)
 
-        with tab4:
-            st.subheader("Projeções e Cenários")
-            st.write("Esta aba está em construção.")
-
-        with tab5:
-            st.subheader("Educação e Boas Práticas")
-            st.write("Esta aba está em construção.")
-            
         arquivo_fluxo = gerar_arquivo_fluxo(df_filtrado)
         st.download_button(label="Baixar Resumo em XLSX", data=arquivo_fluxo, file_name="resumo_fluxo_residuos.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
