@@ -5,9 +5,11 @@ import seaborn as sns
 from io import BytesIO
 
 def gerar_arquivo_fluxo(df_filtrado):
-    resumo_detalhado = df_filtrado.groupby(['Tipo de unidade, segundo o município informante', 'UF'])[
-        ['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']
-    ].sum().reset_index()
+    """Gera um arquivo Excel com o resumo dos dados filtrados."""
+    resumo_detalhado = df_filtrado.groupby(
+        ['Tipo de unidade, segundo o município informante', 'UF']
+    )[['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']].sum().reset_index()
+
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         resumo_detalhado.to_excel(writer, index=False, sheet_name="Resumo por Unidade e UF")
@@ -50,7 +52,7 @@ if uploaded_file:
             st.metric("Tipo de Resíduo Predominante", composicao_total.idxmax())
             
             st.subheader("Distribuição de Resíduos por UF")
-            resumo_por_uf = df_filtrado.groupby(['UF'])[['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']].sum()
+            resumo_por_uf = df_filtrado.groupby('UF')[['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']].sum()
             fig, ax = plt.subplots(figsize=(10, 6))
             sns.heatmap(resumo_por_uf, annot=True, fmt=".2f", cmap="YlGnBu", linewidths=0.5, ax=ax)
             ax.set_title("Mapa de Calor da Geração de Resíduos por UF")
