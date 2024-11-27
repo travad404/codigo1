@@ -4,10 +4,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from io import BytesIO
 
+# Função para gerar arquivo Excel
 def gerar_arquivo_fluxo(df_filtrado):
-    resumo_detalhado = df_filtrado.groupby(['Tipo de unidade, segundo o município informante', 'UF'])[
-        ['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']
-    ].sum().reset_index()
+    resumo_detalhado = df_filtrado.groupby(['Tipo de unidade, segundo o município informante', 'UF'])[['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']].sum().reset_index()
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         resumo_detalhado.to_excel(writer, index=False, sheet_name="Resumo por Unidade e UF")
@@ -17,20 +16,25 @@ def gerar_arquivo_fluxo(df_filtrado):
     output.seek(0)
     return output
 
+# Configuração da página
 st.set_page_config(page_title="Análise de Resíduos", layout="wide")
 st.title("Análise de Gestão de Resíduos")
 
+# Carregar o arquivo
 uploaded_file = st.file_uploader("Carregue sua tabela", type=["xlsx", "csv"])
 
 if uploaded_file:
+    # Carregar os dados
     df = pd.read_excel(uploaded_file) if uploaded_file.name.endswith('.xlsx') else pd.read_csv(uploaded_file)
     st.write("Tabela carregada:")
     st.write(df)
 
+    # Seleção de filtro
     tipos_unidade = st.multiselect("Escolha os Tipos de Unidade", df['Tipo de unidade, segundo o município informante'].unique())
     ufs = st.multiselect("Escolha os Estados (UF)", df['UF'].unique())
 
     if tipos_unidade and ufs:
+        # Filtrando dados
         df_filtrado = df[
             (df['Tipo de unidade, segundo o município informante'].isin(tipos_unidade)) & 
             (df['UF'].isin(ufs))
@@ -39,6 +43,7 @@ if uploaded_file:
         composicao_total = df_filtrado[['Dom+Pub', 'Entulho', 'Podas', 'Saúde', 'Outros']].sum()
         total_residuos = composicao_total.sum()
 
+        # Criar as abas
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "Visão Geral Nacional", "Comparação entre UFs", 
             "Destinação de Resíduos por Unidade", "Projeções e Cenários", "Educação e Boas Práticas"
@@ -88,7 +93,7 @@ if uploaded_file:
             st.subheader("Gravimetria especifica por UF")
             st.write(",")
             
-
+        # Gerar arquivo e permitir download
         arquivo_fluxo = gerar_arquivo_fluxo(df_filtrado)
         st.download_button(label="Baixar Resumo em XLSX", data=arquivo_fluxo, file_name="resumo_fluxo_residuos.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
