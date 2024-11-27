@@ -2,11 +2,6 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 
-# Configuração inicial do Streamlit
-st.set_page_config(page_title="Gestão de Resíduos", layout="wide")
-st.title("📊 Gestão de Resíduos Sólidos Urbanos")
-st.sidebar.header("Configurações de Entrada")
-
 # Função para carregar os dados das tabelas
 @st.cache_data
 def carregar_tabelas(tabela1_path, tabela2_path):
@@ -59,6 +54,11 @@ def calcular_fluxo_ajustado(gravimetria_data, resumo_fluxo_data):
         fluxo_ajustado.append(ajuste_residuos)
     return pd.DataFrame(fluxo_ajustado)
 
+# Aplicação Streamlit
+st.set_page_config(page_title="Gestão de Resíduos", layout="wide")
+st.title("📊 Gestão de Resíduos Sólidos Urbanos")
+st.sidebar.header("Configurações de Entrada")
+
 # Upload das planilhas
 tabela1_path = st.sidebar.file_uploader("Carregue a Tabela 1 (Gravimetria por Tipo de Unidade)", type=["xlsx"])
 tabela2_path = st.sidebar.file_uploader("Carregue a Tabela 2 (Resumo por Unidade e UF)", type=["xlsx"])
@@ -92,6 +92,38 @@ if tabela1_path and tabela2_path:
     energetico_cols = ["Valor energético (MJ/ton)"]
     if energetico_cols[0] in fluxo_ajustado.columns:
         st.subheader("📍 Valor Energético (Incineração e Coprocessamento)")
+        energetico = fluxo_ajustado[["UF"] + energetico_cols].groupby("UF").sum().reset_index()
+        fig_energetico = px.bar(energetico, x="UF", y=energetico_cols, barmode="stack", title="Valor Energético por UF")
+        st.plotly_chart(fig_energetico, use_container_width=True)
+
+    # Gráficos por categoria
+    categorias = {
+        "Resíduos Urbanos": ["Plásticos", "Vidros", "Metais", "Orgânicos", "Dom+Pub"],
+        "Entulho e Materiais de Construção": ["Concreto", "Argamassa", "Tijolo", "Madeira", "Papel", "Plástico", "Metal",
+                                              "Material agregado", "Terra bruta", "Pedra", "Caliça Retida", "Caliça Peneirada",
+                                              "Cerâmica", "Material orgânico e galhos", "Entulho"]
+    }
+
+    # Gráficos para resíduos urbanos
+    residuos_urbanos_cols = [col for col in categorias["Resíduos Urbanos"] if col in fluxo_ajustado.columns]
+    if residuos_urbanos_cols:
+        st.subheader("📍 Resíduos Urbanos")
+        residuos_urbanos = fluxo_ajustado[["UF"] + residuos_urbanos_cols].groupby("UF").sum().reset_index()
+        fig_urbanos = px.bar(residuos_urbanos, x="UF", y=residuos_urbanos_cols, barmode="stack", title="Resíduos Urbanos por UF")
+        st.plotly_chart(fig_urbanos, use_container_width=True)
+
+    # Gráficos para entulho
+    entulho_cols = [col for col in categorias["Entulho e Materiais de Construção"] if col in fluxo_ajustado.columns]
+    if entulho_cols:
+        st.subheader("📍 Entulho e Materiais de Construção")
+        entulho = fluxo_ajustado[["UF"] + entulho_cols].groupby("UF").sum().reset_index()
+        fig_entulho = px.bar(entulho, x="UF", y=entulho_cols, barmode="stack", title="Entulho e Materiais de Construção por UF")
+        st.plotly_chart(fig_entulho, use_container_width=True)
+
+    # Gráfico de Valor Energético
+    energetico_cols = ["Valor energético p/Coprocessamento", "Valor energético p/Incineração", "Saúde"]
+    if all(col in fluxo_ajustado.columns for col in energetico_cols):
+        st.subheader("📍 Valor Energético")
         energetico = fluxo_ajustado[["UF"] + energetico_cols].groupby("UF").sum().reset_index()
         fig_energetico = px.bar(energetico, x="UF", y=energetico_cols, barmode="stack", title="Valor Energético por UF")
         st.plotly_chart(fig_energetico, use_container_width=True)
