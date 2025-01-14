@@ -70,7 +70,7 @@ if tabela1_path and tabela2_path:
     
     # Métricas Resumidas
     st.header("Resumo dos Indicadores")
-    total_residuos = fluxo_ajustado.filter(regex="Plásticos|Vidros|Metais|Orgânicos|Dom+Pub").sum().sum()
+    total_residuos = fluxo_ajustado.filter(regex="Papel|Plásticos|Vidros|Metais|Orgânicos|Podas Municipais e Domiciliares|Inertes|Dom+Pub|Concreto|Argamassa|Tijolo|Madeira|Papel|Plástico|Metal|Material agregado|Terra bruta|Pedra|Caliça Retida|Caliça Peneirada|Cerâmica|Material orgânico e galhos|Entulho").sum().sum()
     total_entulho = fluxo_ajustado.filter(regex="Concreto|Argamassa|Tijolo|Madeira|Papel|Plástico|Metal|Material agregado|Terra bruta|Pedra|Caliça Retida|Caliça Peneirada|Cerâmica|Material orgânico e galhos|Entulho").sum().sum()
     col1, col2 = st.columns(2)
     col1.metric("Total de Resíduos Processados (ton)", f"{total_residuos:,.2f}")
