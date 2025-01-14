@@ -11,7 +11,6 @@ def carregar_tabelas(tabela1_path, tabela2_path):
     resumo_fluxo_data.columns = resumo_fluxo_data.columns.str.strip()  # Limpando espaços
     return gravimetria_data, resumo_fluxo_data
 
-
 # Percentuais para entulhos
 percentuais_entulho = {
     "Concreto": 0.0677, "Argamassa": 0.1065, "Tijolo": 0.078, "Madeira": 0.0067,
@@ -66,46 +65,65 @@ tabela2_path = st.sidebar.file_uploader("Carregue a Tabela 2 (Resumo por Unidade
 
 if tabela1_path and tabela2_path:
     gravimetria_data, resumo_fluxo_data = carregar_tabelas(tabela1_path, tabela2_path)
+    st.success("✅ Tabelas carregadas com sucesso!")
     fluxo_ajustado = calcular_fluxo_ajustado(gravimetria_data, resumo_fluxo_data)
+    
+    # Métricas Resumidas
+    st.header("Resumo dos Indicadores")
+    total_residuos = fluxo_ajustado.filter(regex="Papel|Plásticos|Vidros|Metais|Orgânicos|Concreto|Argamassa").sum().sum()
+    total_entulho = fluxo_ajustado.filter(regex="Concreto|Argamassa|Tijolo").sum().sum()
+    col1, col2 = st.columns(2)
+    col1.metric("Total de Resíduos Processados (ton)", f"{total_residuos:,.2f}")
+    col2.metric("Total de Entulho Processado (ton)", f"{total_entulho:,.2f}")
 
-    # Criação de abas
-    aba1, aba2 = st.tabs(["📊 Resumo e Gráficos Gerais", "🔍 Análise por UF e Unidade"])
+    # Exibição dos resultados detalhados
+    st.header("📈 Resultados Detalhados")
+    st.dataframe(fluxo_ajustado)
 
-    # Aba 1 - Resumo e Gráficos Gerais
-    with aba1:
-        st.header("Resumo dos Indicadores")
-        total_residuos = fluxo_ajustado.filter(regex="Papel|Plásticos|Vidros|Metais|Orgânicos|Concreto|Argamassa").sum().sum()
-        total_entulho = fluxo_ajustado.filter(regex="Concreto|Argamassa|Tijolo").sum().sum()
-        col1, col2 = st.columns(2)
-        col1.metric("Total de Resíduos Processados (ton)", f"{total_residuos:,.2f}")
-        col2.metric("Total de Entulho Processado (ton)", f"{total_entulho:,.2f}")
+    # Gráficos para Redução de Peso
+    reducao_peso_cols = ["Redução Peso Seco", "Redução Peso Líquido"]
+    if all(col in fluxo_ajustado.columns for col in reducao_peso_cols):
+        st.subheader("📍 Redução de Peso com Podas e Dom+Pub")
+        reducao_peso = fluxo_ajustado[["UF"] + reducao_peso_cols].groupby("UF").sum().reset_index()
+        fig_peso = px.bar(reducao_peso, x="UF", y=reducao_peso_cols, barmode="stack", title="Redução de Peso por UF")
+        st.plotly_chart(fig_peso, use_container_width=True)
 
-        st.header("📈 Resultados Detalhados")
-        st.dataframe(fluxo_ajustado)
+    # Gráficos para Valor Energético
+    energetico_cols = ["Valor energético (MJ/ton)"]
+    if energetico_cols[0] in fluxo_ajustado.columns:
+        st.subheader("📍 Valor Energético (Incineração e Coprocessamento)")
+        energetico = fluxo_ajustado[["UF"] + energetico_cols].groupby("UF").sum().reset_index()
+        fig_energetico = px.bar(energetico, x="UF", y=energetico_cols, barmode="stack", title="Valor Energético por UF")
+        st.plotly_chart(fig_energetico, use_container_width=True)
 
-    # Aba 2 - Análise por UF e Unidade
-    with aba2:
-        st.header("🔍 Análise por UF e Unidade de Tratamento")
-        
-        # Seleção de filtros
-        uf_selecionado = st.selectbox("Selecione a UF:", fluxo_ajustado["UF"].unique())
-        unidade_selecionada = st.selectbox("Selecione o Tipo de Unidade:", fluxo_ajustado["Unidade"].unique())
+    # Gráficos por categoria
+    categorias = {
+        "Resíduos Urbanos": ["Plásticos", "Vidros", "Metais", "Orgânicos", "Dom+Pub"],
+        "Entulho e Materiais de Construção": ["Concreto", "Argamassa", "Tijolo", "Madeira", "Papel", "Plástico", "Metal",
+                                              "Material agregado", "Terra bruta", "Pedra", "Caliça Retida", "Caliça Peneirada",
+                                              "Cerâmica", "Material orgânico e galhos", "Entulho"]
+    }
 
-        # Filtrar dados
-        dados_filtrados = fluxo_ajustado[
-            (fluxo_ajustado["UF"] == uf_selecionado) &
-            (fluxo_ajustado["Unidade"] == unidade_selecionada)
-        ]
+    # Gráficos para resíduos urbanos
+    residuos_urbanos_cols = [col for col in categorias["Resíduos Urbanos"] if col in fluxo_ajustado.columns]
+    if residuos_urbanos_cols:
+        st.subheader("📍 Resíduos Urbanos")
+        residuos_urbanos = fluxo_ajustado[["UF"] + residuos_urbanos_cols].groupby("UF").sum().reset_index()
+        fig_urbanos = px.bar(residuos_urbanos, x="UF", y=residuos_urbanos_cols, barmode="stack", title="Resíduos Urbanos por UF")
+        st.plotly_chart(fig_urbanos, use_container_width=True)
 
-        # Preparar dados para gráfico de pizza
-        if not dados_filtrados.empty:
-            residuos_pizza = dados_filtrados.iloc[0].filter(regex="Papel|Plásticos|Vidros|Metais|Orgânicos|Concreto|Argamassa").dropna()
-            fig_pizza = px.pie(
-                residuos_pizza,
-                values=residuos_pizza.values,
-                names=residuos_pizza.index,
-                title=f"Distribuição de Resíduos para {uf_selecionado} - {unidade_selecionada}"
-            )
-            st.plotly_chart(fig_pizza, use_container_width=True)
-        else:
-            st.warning("Nenhum dado encontrado para a combinação selecionada.")
+    # Gráficos para entulho
+    entulho_cols = [col for col in categorias["Entulho e Materiais de Construção"] if col in fluxo_ajustado.columns]
+    if entulho_cols:
+        st.subheader("📍 Entulho e Materiais de Construção")
+        entulho = fluxo_ajustado[["UF"] + entulho_cols].groupby("UF").sum().reset_index()
+        fig_entulho = px.bar(entulho, x="UF", y=entulho_cols, barmode="stack", title="Entulho e Materiais de Construção por UF")
+        st.plotly_chart(fig_entulho, use_container_width=True)
+
+    # Gráfico de Valor Energético
+    energetico_cols = ["Valor energético p/Coprocessamento", "Valor energético p/Incineração", "Saúde"]
+    if all(col in fluxo_ajustado.columns for col in energetico_cols):
+        st.subheader("📍 Valor Energético")
+        energetico = fluxo_ajustado[["UF"] + energetico_cols].groupby("UF").sum().reset_index()
+        fig_energetico = px.bar(energetico, x="UF", y=energetico_cols, barmode="stack", title="Valor Energético por UF")
+        st.plotly_chart(fig_energetico, use_container_width=True)
