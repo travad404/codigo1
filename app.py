@@ -2,128 +2,130 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 
-# Função para carregar os dados das tabelas
-@st.cache_data
-def carregar_tabelas(tabela1_path, tabela2_path):
-    gravimetria_data = pd.read_excel(tabela1_path)
-    resumo_fluxo_data = pd.read_excel(tabela2_path)
-    gravimetria_data.columns = gravimetria_data.columns.str.strip()  # Limpando espaços
-    resumo_fluxo_data.columns = resumo_fluxo_data.columns.str.strip()  # Limpando espaços
-    return gravimetria_data, resumo_fluxo_data
-
-# Percentuais para entulhos
-percentuais_entulho = {
-    "Concreto": 0.0677, "Argamassa": 0.1065, "Tijolo": 0.078, "Madeira": 0.0067,
-    "Papel": 0.0023, "Plástico": 0.0034, "Metal": 0.0029, "Material agregado": 0.0484,
-    "Terra bruta": 0.0931, "Pedra": 0.00192, "Caliça Retida": 0.3492,
-    "Caliça Peneirada": 0.2, "Cerâmica": 0.0161, "Material orgânico e galhos": 0.0087,
-    "Outros": 0
-}
-
-# Função para calcular o fluxo ajustado
-def calcular_fluxo_ajustado(gravimetria_data, resumo_fluxo_data):
-    fluxo_ajustado = []  # Lista para armazenar os resultados
-    for index, row in resumo_fluxo_data.iterrows():
-        uf = row["UF"]
-        unidade = row["Tipo de unidade, segundo o município informante"]
-        ajuste_residuos = {"UF": uf, "Unidade": unidade}
-        
-        for residuo in ["Dom+Pub", "Entulho", "Podas", "Saúde", "Outros"]:
-            if residuo in resumo_fluxo_data.columns:
-                gravimetricos = gravimetria_data[gravimetria_data["Tipo de unidade, segundo o município informante"] == unidade]
-                if not gravimetricos.empty:
-                    gravimetricos = gravimetricos.iloc[0]
-                    if residuo == "Dom+Pub":
-                        ajuste_residuos.update({
-                            "Papel/Papelão": row[residuo] * gravimetricos.get("Papel/Papelão", 0),
-                            "Plásticos": row[residuo] * gravimetricos.get("Plásticos", 0),
-                            "Vidros": row[residuo] * gravimetricos.get("Vidros", 0),
-                            "Metais": row[residuo] * gravimetricos.get("Metais", 0),
-                            "Orgânicos": row[residuo] * gravimetricos.get("Orgânicos", 0),
-                        })
-                    elif residuo == "Entulho":
-                        for material, percentual in percentuais_entulho.items():
-                            ajuste_residuos[material] = row[residuo] * percentual
-                    elif residuo == "Saúde":
-                        ajuste_residuos["Valor energético (MJ/ton)"] = row[residuo] * gravimetricos.get("Valor energético p/Incineração", 0)
-                    elif residuo == "Podas":
-                        ajuste_residuos["Redução Peso Seco"] = row[residuo] * gravimetricos.get("Redução de peso seco com Podas", 0)
-                        ajuste_residuos["Redução Peso Líquido"] = row[residuo] * gravimetricos.get("Redução de peso Líquido com Podas", 0)
-                    elif residuo == "Outros":
-                        ajuste_residuos["Outros Processados"] = row[residuo] * gravimetricos.get("Outros", 0)
-        fluxo_ajustado.append(ajuste_residuos)
-    return pd.DataFrame(fluxo_ajustado)
-
-# Aplicação Streamlit
+# Configuração inicial
 st.set_page_config(page_title="Gestão de Resíduos", layout="wide")
 st.title("📊 Gestão de Resíduos Sólidos Urbanos")
-st.sidebar.header("Configurações de Entrada")
 
-# Upload das planilhas
-tabela1_path = st.sidebar.file_uploader("Carregue a Tabela 1 (Gravimetria por Tipo de Unidade)", type=["xlsx"])
-tabela2_path = st.sidebar.file_uploader("Carregue a Tabela 2 (Resumo por Unidade e UF)", type=["xlsx"])
-
-if tabela1_path and tabela2_path:
-    gravimetria_data, resumo_fluxo_data = carregar_tabelas(tabela1_path, tabela2_path)
-    st.success("✅ Tabelas carregadas com sucesso!")
-    fluxo_ajustado = calcular_fluxo_ajustado(gravimetria_data, resumo_fluxo_data)
+# ==========================================
+# FUNÇÕES DE PROCESSAMENTO DE DADOS
+# ==========================================
+@st.cache_data
+def carregar_dados(tabela1, tabela2):
+    """Carrega e combina dados das planilhas de gravimetria e fluxo"""
+    df_grav = pd.read_excel(tabela1).rename(columns=lambda x: x.strip())
+    df_fluxo = pd.read_excel(tabela2).rename(columns=lambda x: x.strip())
     
-    # Métricas Resumidas
-    st.header("Resumo dos Indicadores")
-    total_residuos = fluxo_ajustado.filter(regex="Papel/Papelão|Plásticos|Vidros|Metais|Orgânicos|Podas Municipais e Domiciliares|Inertes|Dom+Pub|Concreto|Argamassa|Tijolo|Madeira|Papel|Plástico|Metal|Material agregado|Terra bruta|Pedra|Caliça Retida|Caliça Peneirada|Cerâmica|Material orgânico e galhos|Entulho").sum().sum()
-    total_entulho = fluxo_ajustado.filter(regex="Concreto|Argamassa|Tijolo|Madeira|Papel|Plástico|Metal|Material agregado|Terra bruta|Pedra|Caliça Retida|Caliça Peneirada|Cerâmica|Material orgânico e galhos|Entulho").sum().sum()
+    # Mesclar dados para acesso rápido aos percentuais
+    df_completo = df_fluxo.merge(
+        df_grav,
+        on="Tipo de unidade, segundo o município informante",
+        how="left"
+    )
+    return df_grav, df_fluxo, df_completo
+
+def calcular_fluxo_ajustado(df_completo):
+    """Calcula valores ajustados usando operações vetorizadas"""
+    # Cópia segura para evitar warnings
+    df = df_completo.copy()
+    
+    # Dicionário de percentuais para entulho
+    entulho_components = {
+        "Concreto": 0.0677, "Argamassa": 0.1065, "Tijolo": 0.078,
+        "Madeira": 0.0067, "Papel": 0.0023, "Plástico": 0.0034,
+        "Metal": 0.0029, "Material agregado": 0.0484, "Terra bruta": 0.0931,
+        "Pedra": 0.00192, "Caliça Retida": 0.3492, "Caliça Peneirada": 0.2,
+        "Cerâmica": 0.0161, "Material orgânico e galhos": 0.0087
+    }
+    
+    # Calcular componentes de Dom+Pub
+    dom_pub_components = [
+        "Papel/Papelão", "Plásticos", "Vidros", 
+        "Metais", "Orgânicos"
+    ]
+    for col in dom_pub_components:
+        df[col] = df["Dom+Pub"] * df[col + "_y"]
+    
+    # Calcular componentes de Entulho
+    for material, perc in entulho_components.items():
+        df[material] = df["Entulho"] * perc
+    
+    # Calcular métricas adicionais
+    df["Valor energético (MJ/ton)"] = df["Saúde"] * df["Valor energético p/Incineração"]
+    df["Redução Peso Seco"] = df["Podas"] * df["Redução de peso seco com Podas"]
+    df["Redução Peso Líquido"] = df["Podas"] * df["Redução de peso Líquido com Podas"]
+    
+    return df
+
+# ==========================================
+# FUNÇÕES DE VISUALIZAÇÃO
+# ==========================================
+def criar_grafico(df, cols, title, height=500):
+    """Cria gráfico de barras agrupadas para múltiplas colunas"""
+    df_melt = df.melt(id_vars="UF", value_vars=cols, var_name="Componente")
+    fig = px.bar(
+        df_melt, x="UF", y="value", color="Componente",
+        title=title, height=height
+    )
+    fig.update_layout(barmode="stack")
+    return fig
+
+# ==========================================
+# INTERFACE STREAMLIT
+# ==========================================
+with st.sidebar:
+    st.header("Configurações de Entrada")
+    tabela1 = st.file_uploader("Tabela 1 - Gravimetria", type="xlsx")
+    tabela2 = st.file_uploader("Tabela 2 - Fluxo de Resíduos", type="xlsx")
+
+if tabela1 and tabela2:
+    # Carregar e processar dados
+    df_grav, df_fluxo, df_completo = carregar_dados(tabela1, tabela2)
+    df_ajustado = calcular_fluxo_ajustado(df_completo)
+    
+    # Seção de métricas
+    st.header("📈 Métricas Principais")
+    total_residuos = df_ajustado.select_dtypes(include='number').sum().sum()
+    total_entulho = df_ajustado["Entulho"].sum()
+    
     col1, col2 = st.columns(2)
     col1.metric("Total de Resíduos Processados (ton)", f"{total_residuos:,.2f}")
     col2.metric("Total de Entulho Processado (ton)", f"{total_entulho:,.2f}")
-
-    # Exibição dos resultados detalhados
-    st.header("📈 Resultados Detalhados")
-    st.dataframe(fluxo_ajustado)
-
-    # Gráficos para Redução de Peso
-    reducao_peso_cols = ["Redução Peso Seco", "Redução Peso Líquido"]
-    if all(col in fluxo_ajustado.columns for col in reducao_peso_cols):
-        st.subheader("📍 Redução de Peso com Podas e Dom+Pub")
-        reducao_peso = fluxo_ajustado[["UF"] + reducao_peso_cols].groupby("UF").sum().reset_index()
-        fig_peso = px.bar(reducao_peso, x="UF", y=reducao_peso_cols, barmode="stack", title="Redução de Peso por UF")
-        st.plotly_chart(fig_peso, use_container_width=True)
-
-    # Gráficos para Valor Energético
-    energetico_cols = ["Valor energético (MJ/ton)"]
-    if energetico_cols[0] in fluxo_ajustado.columns:
-        st.subheader("📍 Valor Energético (Incineração e Coprocessamento)")
-        energetico = fluxo_ajustado[["UF"] + energetico_cols].groupby("UF").sum().reset_index()
-        fig_energetico = px.bar(energetico, x="UF", y=energetico_cols, barmode="stack", title="Valor Energético por UF")
-        st.plotly_chart(fig_energetico, use_container_width=True)
-
-    # Gráficos por categoria
-    categorias = {
-        "Resíduos Urbanos": ["Papel/Papelão","Plásticos", "Vidros", "Metais", "Orgânicos", "Dom+Pub","Inertes"],
-        "Entulho e Materiais de Construção": ["Concreto", "Argamassa", "Tijolo", "Madeira", "Papel", "Plástico", "Metal",
-                                              "Material agregado", "Terra bruta", "Pedra", "Caliça Retida", "Caliça Peneirada",
-                                              "Cerâmica", "Material orgânico e galhos", "Entulho"]
-    }
-
-    # Gráficos para resíduos urbanos
-    residuos_urbanos_cols = [col for col in categorias["Resíduos Urbanos"] if col in fluxo_ajustado.columns]
-    if residuos_urbanos_cols:
-        st.subheader("📍 Resíduos Urbanos")
-        residuos_urbanos = fluxo_ajustado[["UF"] + residuos_urbanos_cols].groupby("UF").sum().reset_index()
-        fig_urbanos = px.bar(residuos_urbanos, x="UF", y=residuos_urbanos_cols, barmode="stack", title="Resíduos Urbanos por UF")
-        st.plotly_chart(fig_urbanos, use_container_width=True)
-
-    # Gráficos para entulho
-    entulho_cols = [col for col in categorias["Entulho e Materiais de Construção"] if col in fluxo_ajustado.columns]
-    if entulho_cols:
-        st.subheader("📍 Entulho e Materiais de Construção")
-        entulho = fluxo_ajustado[["UF"] + entulho_cols].groupby("UF").sum().reset_index()
-        fig_entulho = px.bar(entulho, x="UF", y=entulho_cols, barmode="stack", title="Entulho e Materiais de Construção por UF")
-        st.plotly_chart(fig_entulho, use_container_width=True)
-
-    # Gráfico de Valor Energético
-    energetico_cols = ["Valor energético p/Coprocessamento", "Valor energético p/Incineração", "Saúde"]
-    if all(col in fluxo_ajustado.columns for col in energetico_cols):
-        st.subheader("📍 Valor Energético")
-        energetico = fluxo_ajustado[["UF"] + energetico_cols].groupby("UF").sum().reset_index()
-        fig_energetico = px.bar(energetico, x="UF", y=energetico_cols, barmode="stack", title="Valor Energético por UF")
-        st.plotly_chart(fig_energetico, use_container_width=True)
+    
+    # Seção de gráficos
+    st.header("📊 Visualizações")
+    
+    # Gráfico para componentes urbanos
+    componentes_urbanos = [
+        "Papel/Papelão", "Plásticos", "Vidros", 
+        "Metais", "Orgânicos"
+    ]
+    st.plotly_chart(
+        criar_grafico(
+            df_ajustado.groupby("UF")[componentes_urbanos].sum().reset_index(),
+            componentes_urbanos,
+            "Composição de Resíduos Urbanos por UF"
+        ), 
+        use_container_width=True
+    )
+    
+    # Gráfico para entulho
+    componentes_entulho = list(entulho_components.keys())
+    st.plotly_chart(
+        criar_grafico(
+            df_ajustado.groupby("UF")[componentes_entulho].sum().reset_index(),
+            componentes_entulho,
+            "Composição de Entulho por UF"
+        ), 
+        use_container_width=True
+    )
+    
+    # Gráfico para valor energético
+    if "Valor energético (MJ/ton)" in df_ajustado:
+        st.plotly_chart(
+            px.bar(
+                df_ajustado.groupby("UF")["Valor energético (MJ/ton)"].sum().reset_index(),
+                x="UF", y="Valor energético (MJ/ton)",
+                title="Valor Energético por Incineração"
+            ),
+            use_container_width=True
+        )
